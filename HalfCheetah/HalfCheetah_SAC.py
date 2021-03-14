@@ -21,78 +21,111 @@ from stable_baselines3.common.monitor import Monitor
 
 from stable_baselines3.common.results_plotter import load_results, ts2xy
 
+#Adding Stuff for new checkpoints
+from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback
+# Create Storage Paths
+test_name = 'SAC-3M'
 env_name = 'HalfCheetahBulletEnv-v0'
+videoName = 'videos'
+tb_log_name = test_name + '_' + env_name
+log_dir = os.path.join('log', test_name)
+num_cpu = 1
+model_stats_path = os.path.join(log_dir, 'Model_' + tb_log_name)
+env_stats_path = os.path.join(log_dir, 'Env_' + tb_log_name)
+checkpoint_path = os.path.join(log_dir, 'saved_models')
+best_path = os.path.join(log_dir, 'best_models')
+video_path = os.path.join(log_dir, videoName)
+tb_log = os.path.join(log_dir, 'tb_log')
+eval_freq = 100000
+total_timesteps = 3000000
+# Some Controls to what happens...
 StartFresh = True
 DoTraining = True
 DoVideo = True
 
 def main():
-  # Create the callback: check every 1000 steps
-  log_dir = 'new_log'
-  num_cpu = 1
-  model_stats_path = os.path.join(log_dir, "sac_" + env_name)
-  env_stats_path = os.path.join(log_dir, 'sac_LR001.pkl')
-  tb_log = 'tb_log'
-  itr = 1
-  videoName = 'M_timesteps_sac'
-  tb_log_name = videoName
-
-  if(StartFresh):
+    if(StartFresh):
+        # Create Environment
         env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
         env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
         env.reset()
-        
+        # Separate evaluation env
+        eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True, clip_obs=10.)
+        eval_env.reset()
+        # Create Model
         model = SAC("MlpPolicy", env, verbose=1, tensorboard_log=tb_log)
 
-  else:
-      env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
-      env = VecNormalize.load(env_stats_path, env)
-      env.reset()
+    else:
+        # Load Enironment
+        env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        env = VecNormalize.load(env_stats_path, env)
+        env.reset()
+        # Separate evaluation env
+        eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        eval_env = VecNormalize.load(env_stats_path, env)
+        eval_env.reset()
+        # Load Model
+        model = SAC.load(model_stats_path, tensorboard_log=tb_log)
+        model.set_env(env)
 
-      model = SAC.load(model_stats_path, tensorboard_log=tb_log)
-      model.set_env(env)
+    if(DoTraining):
+        checkpoint_callback = CheckpointCallback(save_freq=eval_freq, save_path=checkpoint_path)
+        # Use deterministic actions for evaluation
+        eval_callback = EvalCallback(eval_env, best_model_save_path=best_path,
+                                    log_path=best_path, eval_freq=eval_freq,
+                                    deterministic=True, render=False)
+        # Create the callback list
+        callbacks = CallbackList([checkpoint_callback, eval_callback])
 
-  if(DoTraining):
-    callback = SaveOnBestTrainingRewardCallback(check_freq=1000, log_dir=log_dir)
-    model.learn(total_timesteps=1000000,
+        model.learn(total_timesteps=total_timesteps,
             tb_log_name=tb_log_name, 
-            reset_num_timesteps=False) #, callback=callback, =TensorboardCallback()
+            reset_num_timesteps=False,
+            callback=callbacks) #, callback=callback, =TensorboardCallback()
 
     # Don't forget to save the VecNormalize statistics when saving the agent
     model.save(model_stats_path)
     env.save(env_stats_path)
     
-  if(DoVideo):
-    eval_env = make_vec_env(env_name, n_envs=1)
-    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True, clip_obs=10.)
-    eval_env.reset()
-    # mean_reward, std_reward = evaluate_policy(model, eval_env)
-    # print(f"Mean reward = {mean_reward:.2f} +/- {std_reward:.2f}")
-    record_video(env_name, model, video_length=2000, prefix='ppo_'+ env_name + videoName)
+    if(DoVideo):
+        record_video(eval_env, model, video_length=1000, prefix=videoName, video_folder=video_path)
 
-def record_video(env_id, model, video_length=500, prefix='', video_folder='videos/'):
-  """
-  :param env_id: (str)
-  :param model: (RL model)
-  :param video_length: (int)
-  :param prefix: (str)
-  :param video_folder: (str)
-  """
-  eval_env = DummyVecEnv([lambda: gym.make(env_id)])
-  # Start the video at step=0 and record 500 steps
-  eval_env = VecVideoRecorder(eval_env, video_folder=video_folder,
+def record_video(env, model, video_length=500, prefix='', video_folder='videos/'):
+    """
+    :param env_id: (str)
+    :param model: (RL model)
+    :param video_length: (int)
+    :param prefix: (str)
+    :param video_folder: (str)
+    """
+    eval_env = VecVideoRecorder(env, video_folder=video_folder,
                               record_video_trigger=lambda step: step == 0, video_length=video_length,
                               name_prefix=prefix)
+    obs = eval_env.reset()
+    for _ in range(video_length):
+        action, _ = model.predict(obs)
+        obs, _, _, _ = eval_env.step(action)
 
-  obs = eval_env.reset()
-  for _ in range(video_length):
-    action, _ = model.predict(obs)
-    obs, _, _, _ = eval_env.step(action)
+    # Close the video recorder
+    eval_env.close()
 
-  # Close the video recorder
-  eval_env.close()
-
-  
+def make_env(env_id: str, rank: int, seed: int = 1, log_dir=None) -> Callable:
+    '''
+    Utility function for multiprocessed env.
+    
+    :param env_id: (str) the environment ID
+    :param num_env: (int) the number of environment you wish to have in subprocesses
+    :param seed: (int) the inital seed for RNG
+    :param rank: (int) index of the subprocess
+    :return: (Callable)
+    '''
+    def _init() -> gym.Env:
+        env = gym.make(env_id)
+        env = Monitor(env, log_dir)
+        env.seed(seed + rank)
+        return env
+    set_random_seed(seed)
+    return _init
 
 class SaveOnBestTrainingRewardCallback(BaseCallback):
     '''
@@ -144,27 +177,6 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
 
         return True
 
-def make_env(env_id: str, rank: int, seed: int = 1, log_dir=None) -> Callable:
-    '''
-    Utility function for multiprocessed env.
-    
-    :param env_id: (str) the environment ID
-    :param num_env: (int) the number of environment you wish to have in subprocesses
-    :param seed: (int) the inital seed for RNG
-    :param rank: (int) index of the subprocess
-    :return: (Callable)
-    '''
-    def _init() -> gym.Env:
-        env = gym.make(env_id)
-        env = Monitor(env, log_dir)
-        env.seed(seed + rank)
-        return env
-    set_random_seed(seed)
-    return _init
-
-if __name__ == '__main__':
-    main()
-
 class TensorboardCallback(BaseCallback):
     """
     Custom callback for plotting additional values in tensorboard.
@@ -178,3 +190,6 @@ class TensorboardCallback(BaseCallback):
         value = np.random.random()
         self.logger.record('random_value', value)
         return True
+
+if __name__ == '__main__':
+    main()
