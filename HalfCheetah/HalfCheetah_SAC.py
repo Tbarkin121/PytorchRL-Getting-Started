@@ -12,7 +12,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 import base64
 from pathlib import Path
 from IPython import display as ipythondisplay
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecVideoRecorder
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecVideoRecorder, sync_envs_normalization
 
 from stable_baselines3.common.callbacks import BaseCallback
 from typing import Callable
@@ -22,7 +22,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.results_plotter import load_results, ts2xy
 
 #Adding Stuff for new checkpoints
-from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback, EveryNTimesteps
 # Create Storage Paths
 test_name = 'SAC-3M'
 env_name = 'HalfCheetahBulletEnv-v0'
@@ -37,6 +37,7 @@ best_path = os.path.join(log_dir, 'best_models')
 video_path = os.path.join(log_dir, videoName)
 tb_log = os.path.join(log_dir, 'tb_log')
 eval_freq = 100000
+vid_freq = 500000
 total_timesteps = 3000000
 # Some Controls to what happens...
 StartFresh = True
@@ -75,8 +76,12 @@ def main():
         eval_callback = EvalCallback(eval_env, best_model_save_path=best_path,
                                     log_path=best_path, eval_freq=eval_freq,
                                     deterministic=True, render=False)
+        # Video Update Callback 
+        record_callback = RecordVideo(env_name, videoName=videoName, videoPath=video_path, verbose=1)
+        vid_callback = EveryNTimesteps(n_steps=vid_freq, callback=record_callback)
+        
         # Create the callback list
-        callbacks = CallbackList([checkpoint_callback, eval_callback])
+        callbacks = CallbackList([checkpoint_callback, eval_callback, vid_callback])
 
         model.learn(total_timesteps=total_timesteps,
             tb_log_name=tb_log_name, 
@@ -87,28 +92,47 @@ def main():
     model.save(model_stats_path)
     env.save(env_stats_path)
     
-    if(DoVideo):
-        record_video(eval_env, model, video_length=1000, prefix=videoName, video_folder=video_path)
+    
 
-def record_video(env, model, video_length=500, prefix='', video_folder='videos/'):
-    """
-    :param env_id: (str)
-    :param model: (RL model)
-    :param video_length: (int)
-    :param prefix: (str)
-    :param video_folder: (str)
-    """
-    eval_env = VecVideoRecorder(env, video_folder=video_folder,
-                              record_video_trigger=lambda step: step == 0, video_length=video_length,
+class RecordVideo(BaseCallback):
+    def __init__(self, env_name, videoName='video', videoPath='videos/', videoLength = 1000, verbose=1):
+        super(RecordVideo, self).__init__(verbose)
+        self.env_name = env_name
+        self.videoName = videoName
+        self.videoPath = videoPath
+        self.videoLength = videoLength
+        
+        #self.num_timesteps
+    def _init_callback(self) -> None:
+        # Create folder if needed
+        if self.videoPath is not None:
+            os.makedirs(self.videoPath, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        print('Record A Video')
+        _videoName = videoName + '_' + str(self.model.num_timesteps)
+        print(_videoName)
+        record_video(self.env_name, self.training_env, self.model, videoLength=self.videoLength, prefix=_videoName, videoPath=self.videoPath)
+
+
+def record_video(env_name, train_env, model, videoLength=500, prefix='', videoPath='videos/'):
+    print('record_video function')
+    # Wrap the env in a Vec Video Recorder 
+    local_eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+    local_eval_env = VecNormalize(local_eval_env, norm_obs=True, norm_reward=True, clip_obs=10.)
+    sync_envs_normalization(train_env, local_eval_env)
+    local_eval_env = VecVideoRecorder(local_eval_env, video_folder=videoPath,
+                              record_video_trigger=lambda step: step == 0, video_length=videoLength,
                               name_prefix=prefix)
-    obs = eval_env.reset()
-    for _ in range(video_length):
+    obs = local_eval_env.reset()
+    for _ in range(videoLength):
         action, _ = model.predict(obs)
-        obs, _, _, _ = eval_env.step(action)
+        obs, _, _, _ = local_eval_env.step(action)
 
     # Close the video recorder
-    eval_env.close()
+    local_eval_env.close()
 
+# To Do: Check out this log_dir variable. Maybe it would help stop the issue I was having with the vectorized environments crashing
 def make_env(env_id: str, rank: int, seed: int = 1, log_dir=None) -> Callable:
     '''
     Utility function for multiprocessed env.
@@ -126,6 +150,8 @@ def make_env(env_id: str, rank: int, seed: int = 1, log_dir=None) -> Callable:
         return env
     set_random_seed(seed)
     return _init
+
+
 
 class SaveOnBestTrainingRewardCallback(BaseCallback):
     '''
