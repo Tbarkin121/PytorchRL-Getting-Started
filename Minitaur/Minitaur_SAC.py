@@ -25,8 +25,10 @@ from stable_baselines3.common.results_plotter import load_results, ts2xy
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback, EveryNTimesteps
 # Create Storage Paths
 
-test_name = 'SAC-Continued2'
-env_name = 'HalfCheetahBulletEnv-v0'
+test_name = 'SAC-Duck'
+env_name = 'MinitaurBulletDuckEnv-v0'
+# env_name = 'MinitaurBulletEnv-v0'
+
 videoName = 'videos'
 tb_log_name = test_name + '_' + env_name
 log_dir = os.path.join('log', test_name)
@@ -42,7 +44,7 @@ eval_freq = 25000
 vid_freq = 100000
 total_timesteps = 3000000
 # Some Controls to what happens...
-StartFresh = False
+StartFresh = True
 DoTraining = True
 DoVideo = True
 
@@ -60,26 +62,27 @@ def main():
         model = SAC("MlpPolicy", env, verbose=1, tensorboard_log=tb_log)
 
     else:
-        tmp_test_name = 'SAC-Continued'
-        tb_log_name = tmp_test_name + '_' + env_name
-        tmp_log_dir = os.path.join('log', tmp_test_name)
-        tmp_model_stats_path = os.path.join(tmp_log_dir, 'Model_' + tb_log_name)
-        tmp_env_stats_path = os.path.join(tmp_log_dir, 'Env_' + tb_log_name)
-        tmp_best_path = os.path.join(tmp_log_dir, 'saved_models')
-        tmp_load_path = os.path.join(tmp_best_path, 'rl_model_3900000_steps')
-        # Load Enironment
-        env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
-        env = VecNormalize.load(tmp_env_stats_path, env)
-        env.reset()
-        # Separate evaluation env
-        eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
-        eval_env = VecNormalize.load(tmp_env_stats_path, eval_env)
-        eval_env.reset()
-        # Load Model
-        # model = SAC.load(model_stats_path, tensorboard_log=tb_log)
-        model = SAC.load(tmp_load_path, tensorboard_log=tb_log, learning_rate=1e-6)
-        # model.learning_rate = 1e-5
-        model.set_env(env)
+        print('else')
+        # tmp_test_name = 'SAC-Continued'
+        # tb_log_name = tmp_test_name + '_' + env_name
+        # tmp_log_dir = os.path.join('log', tmp_test_name)
+        # tmp_model_stats_path = os.path.join(tmp_log_dir, 'Model_' + tb_log_name)
+        # tmp_env_stats_path = os.path.join(tmp_log_dir, 'Env_' + tb_log_name)
+        # tmp_best_path = os.path.join(tmp_log_dir, 'saved_models')
+        # tmp_load_path = os.path.join(tmp_best_path, 'rl_model_3900000_steps')
+        # # Load Enironment
+        # env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        # env = VecNormalize.load(tmp_env_stats_path, env)
+        # env.reset()
+        # # Separate evaluation env
+        # eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        # eval_env = VecNormalize.load(tmp_env_stats_path, eval_env)
+        # eval_env.reset()
+        # # Load Model
+        # # model = SAC.load(model_stats_path, tensorboard_log=tb_log)
+        # model = SAC.load(tmp_load_path, tensorboard_log=tb_log, learning_rate=1e-6)
+        # # model.learning_rate = 1e-5
+        # model.set_env(env)
 
     if(DoTraining):
         checkpoint_callback = CheckpointCallback(save_freq=eval_freq, save_path=checkpoint_path)
