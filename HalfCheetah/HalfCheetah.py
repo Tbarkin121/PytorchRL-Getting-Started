@@ -38,7 +38,7 @@ def main():
   # Create the callback: check every 1000 steps
   log_dir = 'log'
   callback = SaveOnBestTrainingRewardCallback(check_freq=1000, log_dir=log_dir)
-  num_cpu = 8
+  num_cpu = 16
   model_stats_path = os.path.join(log_dir, "sac_" + env_name)
   env_stats_path = os.path.join(log_dir, 'sac_LR001.pkl')
   tb_log = 'tb_log'
@@ -63,7 +63,8 @@ def main():
           gamma=0.9,
           policy_kwargs = policy_kwargs, 
           verbose=1, 
-          tensorboard_log=tb_log)
+          tensorboard_log=tb_log,
+          device="auto")
   else:
       env = SubprocVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
       env = VecNormalize.load(env_stats_path, env)

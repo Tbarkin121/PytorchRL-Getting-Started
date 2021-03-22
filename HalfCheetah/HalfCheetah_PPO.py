@@ -4,7 +4,7 @@ import pybullet_envs
 import gym
 import numpy as np
 
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -25,7 +25,7 @@ from stable_baselines3.common.results_plotter import load_results, ts2xy
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback, EveryNTimesteps
 # Create Storage Paths
 
-test_name = 'SAC-Linux'
+test_name = 'PPO-Linux'
 env_name = 'HalfCheetahBulletEnv-v0'
 videoName = 'videos'
 tb_log_name = test_name + '_' + env_name
@@ -38,8 +38,8 @@ best_path = os.path.join(log_dir, 'best_models')
 load_path = os.path.join(best_path, 'best_model.zip')
 video_path = os.path.join(log_dir, videoName)
 tb_log = os.path.join(log_dir, 'tb_log')
-eval_freq = 25000
-vid_freq = 100000
+eval_freq = 1000/num_cpu #The num_cpu seemed to factor in. 1000 = 16000 for 16 cpu
+vid_freq = eval_freq
 total_timesteps = 3000000
 # Some Controls to what happens...
 StartFresh = True
@@ -49,15 +49,30 @@ DoVideo = False
 def main():
     if(StartFresh):
         # Create Environment
-        env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        env = SubprocVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
         env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
         env.reset()
         # Separate evaluation env
-        eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        eval_env = SubprocVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(1)])
         eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True, clip_obs=10.)
         eval_env.reset()
         # Create Model
-        model = SAC("MlpPolicy", env, verbose=1, tensorboard_log=tb_log)
+        # model = SAC("MlpPolicy", env, verbose=1, tensorboard_log=tb_log, device="auto")
+        policy_kwargs = {
+            'net_arch':[128,64,32],
+        }
+        model = PPO('MlpPolicy', 
+          env, 
+          learning_rate = 0.001,
+          n_steps=512,
+          # batch_size=0,
+          # n_epochs=1,
+          gamma=0.9,
+          policy_kwargs = policy_kwargs, 
+          verbose=1, 
+          tensorboard_log=tb_log,
+          device="auto")
+
 
     else:
         print('duh')
@@ -96,12 +111,13 @@ def main():
         
         # Create the callback list
         callbacks = CallbackList([checkpoint_callback, eval_callback, vid_callback])
+        # callbacks = CallbackList([checkpoint_callback, eval_callback])
 
         print(tb_log_name)
         model.learn(total_timesteps=total_timesteps,
             tb_log_name=tb_log_name, 
             reset_num_timesteps=False,
-            callback=callbacks) #, callback=callback, =TensorboardCallback()
+            callback=callbacks)
 
         # Don't forget to save the VecNormalize statistics when saving the agent
         model.save(model_stats_path)
@@ -149,7 +165,7 @@ class SaveEnvVariable(BaseCallback):
 def record_video(env_name, train_env, model, videoLength=500, prefix='', videoPath='videos/'):
     print('record_video function')
     # Wrap the env in a Vec Video Recorder 
-    local_eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+    local_eval_env = SubprocVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(1)])
     local_eval_env = VecNormalize(local_eval_env, norm_obs=True, norm_reward=True, clip_obs=10.)
     sync_envs_normalization(train_env, local_eval_env)
     local_eval_env = VecVideoRecorder(local_eval_env, video_folder=videoPath,
@@ -176,6 +192,11 @@ def make_env(env_id: str, rank: int, seed: int = 1, log_dir=None) -> Callable:
     '''
     def _init() -> gym.Env:
         env = gym.make(env_id)
+        
+        # Create folder if needed
+        if log_dir is not None:
+            os.makedirs(log_dir, exist_ok=True)
+        
         env = Monitor(env, log_dir)
         env.seed(seed + rank)
         return env
