@@ -1,5 +1,6 @@
 import os 
 
+import torch as th
 import pybullet_envs
 import gym
 import numpy as np
@@ -30,7 +31,7 @@ env_name = 'HalfCheetahBulletEnv-v0'
 videoName = 'videos'
 tb_log_name = test_name + '_' + env_name
 log_dir = os.path.join('log', test_name)
-num_cpu = 1
+num_cpu = 16
 model_stats_path = os.path.join(log_dir, 'Model_' + tb_log_name)
 env_stats_path = os.path.join(log_dir, 'Env_' + tb_log_name)
 checkpoint_path = os.path.join(log_dir, 'saved_models')
@@ -38,8 +39,8 @@ best_path = os.path.join(log_dir, 'best_models')
 load_path = os.path.join(best_path, 'best_model.zip')
 video_path = os.path.join(log_dir, videoName)
 tb_log = os.path.join(log_dir, 'tb_log')
-eval_freq = 1000/num_cpu #The num_cpu seemed to factor in. 1000 = 16000 for 16 cpu
-vid_freq = eval_freq
+eval_freq = 50000/num_cpu #The num_cpu seemed to factor in. 1000 = 16000 for 16 cpu
+vid_freq = 50000 #Well... This doesn't follow the pattern as above... ok whatever
 total_timesteps = 3000000
 # Some Controls to what happens...
 StartFresh = True
@@ -58,20 +59,24 @@ def main():
         eval_env.reset()
         # Create Model
         # model = SAC("MlpPolicy", env, verbose=1, tensorboard_log=tb_log, device="auto")
-        policy_kwargs = {
-            'net_arch':[128,64,32],
-        }
+        policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=[dict(pi=[256, 256], vf=[256, 256])])
+
         model = PPO('MlpPolicy', 
-          env, 
-          learning_rate = 0.001,
-          n_steps=512,
-          # batch_size=0,
-          # n_epochs=1,
-          gamma=0.9,
-          policy_kwargs = policy_kwargs, 
-          verbose=1, 
-          tensorboard_log=tb_log,
-          device="auto")
+            env, 
+            learning_rate = 3e-5,
+            n_steps=512,
+            batch_size=128,
+            n_epochs=20,
+            gamma=0.99,
+            gae_lambda = 0.9,
+            clip_range = 0.4,
+            vf_coef = 0.5,
+            use_sde = True,
+            sde_sample_freq = 4,
+            policy_kwargs = policy_kwargs, 
+            verbose=1, 
+            tensorboard_log=tb_log,
+            device="auto")
 
 
     else:
@@ -107,6 +112,7 @@ def main():
         record_callback = RecordVideo(env_name, videoName=videoName, videoPath=video_path, verbose=1)
         envSave_callback = SaveEnvVariable(env, model, env_stats_path, model_stats_path)
         nStep_callback_list = CallbackList([record_callback, envSave_callback])
+        # nStep_callback_list = CallbackList([envSave_callback])
         vid_callback = EveryNTimesteps(n_steps=vid_freq, callback=nStep_callback_list)
         
         # Create the callback list

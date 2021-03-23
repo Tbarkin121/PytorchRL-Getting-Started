@@ -1,0 +1,4 @@
+ipython
+pybullet
+gym==0.17.3
+stable-baselines3[extra]
