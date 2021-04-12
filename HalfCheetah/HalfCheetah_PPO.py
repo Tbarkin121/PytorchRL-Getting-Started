@@ -1,10 +1,11 @@
 import os 
 
+import torch as th
 import pybullet_envs
 import gym
 import numpy as np
 
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -25,12 +26,12 @@ from stable_baselines3.common.results_plotter import load_results, ts2xy
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback, EveryNTimesteps
 # Create Storage Paths
 
-test_name = 'SAC-Linux'
+test_name = 'PPO-Linux'
 env_name = 'HalfCheetahBulletEnv-v0'
 videoName = 'videos'
 tb_log_name = test_name + '_' + env_name
 log_dir = os.path.join('log', test_name)
-num_cpu = 1
+num_cpu = 16
 model_stats_path = os.path.join(log_dir, 'Model_' + tb_log_name)
 env_stats_path = os.path.join(log_dir, 'Env_' + tb_log_name)
 checkpoint_path = os.path.join(log_dir, 'saved_models')
@@ -38,8 +39,8 @@ best_path = os.path.join(log_dir, 'best_models')
 load_path = os.path.join(best_path, 'best_model.zip')
 video_path = os.path.join(log_dir, videoName)
 tb_log = os.path.join(log_dir, 'tb_log')
-eval_freq = 25000
-vid_freq = 100000
+eval_freq = 50000/num_cpu #The num_cpu seemed to factor in. 1000 = 16000 for 16 cpu
+vid_freq = 50000 #Well... This doesn't follow the pattern as above... ok whatever
 total_timesteps = 3000000
 # Some Controls to what happens...
 StartFresh = True
@@ -49,15 +50,34 @@ DoVideo = False
 def main():
     if(StartFresh):
         # Create Environment
-        env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        env = SubprocVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
         env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
         env.reset()
         # Separate evaluation env
-        eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+        eval_env = SubprocVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(1)])
         eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True, clip_obs=10.)
         eval_env.reset()
         # Create Model
-        model = SAC("MlpPolicy", env, verbose=1, tensorboard_log=tb_log)
+        # model = SAC("MlpPolicy", env, verbose=1, tensorboard_log=tb_log, device="auto")
+        policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=[dict(pi=[256, 256], vf=[256, 256])])
+
+        model = PPO('MlpPolicy', 
+            env, 
+            learning_rate = 3e-5,
+            n_steps=512,
+            batch_size=128,
+            n_epochs=20,
+            gamma=0.99,
+            gae_lambda = 0.9,
+            clip_range = 0.4,
+            vf_coef = 0.5,
+            use_sde = True,
+            sde_sample_freq = 4,
+            policy_kwargs = policy_kwargs, 
+            verbose=1, 
+            tensorboard_log=tb_log,
+            device="auto")
+
 
     else:
         print('duh')
@@ -92,16 +112,18 @@ def main():
         record_callback = RecordVideo(env_name, videoName=videoName, videoPath=video_path, verbose=1)
         envSave_callback = SaveEnvVariable(env, model, env_stats_path, model_stats_path)
         nStep_callback_list = CallbackList([record_callback, envSave_callback])
+        # nStep_callback_list = CallbackList([envSave_callback])
         vid_callback = EveryNTimesteps(n_steps=vid_freq, callback=nStep_callback_list)
         
         # Create the callback list
         callbacks = CallbackList([checkpoint_callback, eval_callback, vid_callback])
+        # callbacks = CallbackList([checkpoint_callback, eval_callback])
 
         print(tb_log_name)
         model.learn(total_timesteps=total_timesteps,
             tb_log_name=tb_log_name, 
             reset_num_timesteps=False,
-            callback=callbacks) #, callback=callback, =TensorboardCallback()
+            callback=callbacks)
 
         # Don't forget to save the VecNormalize statistics when saving the agent
         model.save(model_stats_path)
@@ -149,7 +171,7 @@ class SaveEnvVariable(BaseCallback):
 def record_video(env_name, train_env, model, videoLength=500, prefix='', videoPath='videos/'):
     print('record_video function')
     # Wrap the env in a Vec Video Recorder 
-    local_eval_env = DummyVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(num_cpu)])
+    local_eval_env = SubprocVecEnv([make_env(env_name, i, log_dir=log_dir) for i in range(1)])
     local_eval_env = VecNormalize(local_eval_env, norm_obs=True, norm_reward=True, clip_obs=10.)
     sync_envs_normalization(train_env, local_eval_env)
     local_eval_env = VecVideoRecorder(local_eval_env, video_folder=videoPath,
@@ -176,6 +198,11 @@ def make_env(env_id: str, rank: int, seed: int = 1, log_dir=None) -> Callable:
     '''
     def _init() -> gym.Env:
         env = gym.make(env_id)
+        
+        # Create folder if needed
+        if log_dir is not None:
+            os.makedirs(log_dir, exist_ok=True)
+        
         env = Monitor(env, log_dir)
         env.seed(seed + rank)
         return env
