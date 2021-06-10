@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<robot name="cubebot">
+    <material name="black">
+        <color rgba="0 0 0 1"/>
+    </material>
+    <material name="blue">
+        <color rgba="0.2 0.2 0.8 0.8"/>
+    </material>
+    <material name="red">
+        <color rgba="0.8 0.2 0.2 0.8"/>
+    </material>
+    <material name="green">
+        <color rgba="0.2 0.8 0.2 0.8"/>
+    </material>
+
+    <!-- Base Frame of Cube -->
+    <link name="base_link">
+        <visual>
+            <geometry>
+                <box size="1.0 1.0 1.0"/>
+            </geometry>
+            <material name="blue"/>
+        </visual>
+        <collision>
+            <geometry>
+                <box size="1.0 1.0 1.0"/>
+            </geometry>
+            <origin rpy="1.57075 1.57075 0"/>
+        </collision>
+        <inertial>
+            <mass value="1"/>
+            <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0.0" izz="0.1"/>
+        </inertial>
+    </link>
+
+    <!-- Right Inertial Wheel -->
+    <link name="right_wheel">
+        <visual>
+            <geometry>
+                <cylinder length="0.1" radius="0.25"/>
+            </geometry>
+            <material name="red"/>
+            <origin rpy="1.57075 1.57075 0"/>
+        </visual>
+        <collision>
+            <geometry>
+                <cylinder length="0.1" radius="0.25"/>
+            </geometry>
+            <origin rpy="1.57075 1.57075 0"/>
+        </collision>
+        <inertial>
+            <origin rpy="1.57075 1.57075 0"/>
+            <mass value="0.3"/>
+            <inertia ixx="0.4" ixy="0" ixz="0" iyy="0.4" iyz="0.0" izz="0.2"/>
+        </inertial>
+    </link>
+    <joint name="base_to_right_wheel" type="continuous">
+        <parent link="base_link"/>
+        <child link="right_wheel"/>
+        <axis xyz="0 1 0"/>
+        <origin xyz="0.0 0.50 0.0"/>
+    </joint>
+
+    <!-- Top Inertial Wheel -->
+    <link name="top_wheel">
+        <visual>
+            <geometry>
+                <cylinder length="0.1" radius="0.25"/>
+            </geometry>
+            <material name="green"/>
+            <origin rpy="0 0 0"/>
+        </visual>
+        <collision>
+            <geometry>
+                <cylinder length="0.1" radius="0.25"/>
+            </geometry>
+            <origin rpy="0 0 0"/>
+        </collision>
+        <inertial>
+            <origin rpy="0 0 0"/>
+            <mass value="0.3"/>
+            <inertia ixx="0.4" ixy="0" ixz="0" iyy="0.4" iyz="0.0" izz="0.2"/>
+        </inertial>
+    </link>
+    <joint name="base_to_top_wheel" type="continuous">
+        <parent link="base_link"/>
+        <child link="top_wheel"/>
+        <axis xyz="0 0 1"/>
+        <origin xyz="0.0 0.0 0.5"/>
+    </joint>
+
+</robot>

@@ -61,15 +61,6 @@ def main():
     StartFresh = True
     num_cpu = 8
     if(DoTraining):
-        
-        
-        # This doesn't work but it might have something to do with how the environment is written
-        # num_cpu = 1 
-        # env = make_vec_env(env_id, n_envs=num_cpu, monitor_dir=_log_dir) # make_vec_env contains Monitor
-        
-        # Create the callback: check every 1000 steps
-        # callback = SaveOnBestTrainingRewardCallback(check_freq=1000, log_dir=_log_dir)
-        
         if(StartFresh):
             env = SubprocVecEnv([make_env(env_id, i, log_dir=_log_dir) for i in range(num_cpu)])
             env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
